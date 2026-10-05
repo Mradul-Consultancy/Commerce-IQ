@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CommerceIQ Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<header class="bg-white border-b border-slate-200">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+    <h1 class="text-xl font-bold text-indigo-600">📊 CommerceIQ</h1>
+    <span id="status" class="text-xs px-2 py-1 rounded bg-slate-200">connecting…</span>
+    <div class="ml-auto flex flex-wrap items-center gap-2 text-sm">
+      <input id="start" type="date" class="border rounded px-2 py-1">
+      <span>to</span>
+      <input id="end" type="date" class="border rounded px-2 py-1">
+      <select id="region" class="border rounded px-2 py-1"><option value="">All regions</option></select>
+      <button id="apply" class="bg-indigo-600 text-white rounded px-3 py-1 hover:bg-indigo-700">Apply</button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+  <div id="error" class="hidden bg-red-50 border border-red-200 text-red-700 rounded p-4 text-sm"></div>
+
+  <section id="kpis" class="grid grid-cols-2 lg:grid-cols-5 gap-4"></section>
+
+  <section class="bg-white rounded-lg shadow-sm p-4">
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="font-semibold">Revenue trend</h2>
+      <div class="text-sm space-x-1">
+        <button data-g="month" class="gran px-2 py-1 rounded bg-indigo-600 text-white">Monthly</button>
+        <button data-g="day" class="gran px-2 py-1 rounded bg-slate-200">Daily</button>
+      </div>
+    </div>
+    <div class="h-72"><canvas id="cTrend"></canvas></div>
+  </section>
+
+  <section class="grid lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="font-semibold">Top 10 products</h2>
+        <select id="prodBy" class="border rounded px-2 py-1 text-sm">
+          <option value="units_sold">By units</option><option value="revenue">By revenue</option>
+        </select>
+      </div>
+      <div class="h-80"><canvas id="cProducts"></canvas></div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <h2 class="font-semibold mb-2">Revenue by region</h2>
+      <div class="h-80"><canvas id="cRegions"></canvas></div>
+    </div>
+  </section>
+
+  <section class="grid lg:grid-cols-2 gap-6">
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <h2 class="font-semibold mb-2">Revenue by category</h2>
+      <div class="h-72"><canvas id="cCategories"></canvas></div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <h2 class="font-semibold mb-2">Order status</h2>
+      <div class="h-72"><canvas id="cStatus"></canvas></div>
+    </div>
+  </section>
+
+  <section class="bg-white rounded-lg shadow-sm p-4">
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <h2 class="font-semibold">Top customers (all time)</h2>
+      <input id="search" placeholder="Search name or city…" class="ml-auto border rounded px-2 py-1 text-sm">
+      <button id="export" class="bg-slate-800 text-white rounded px-3 py-1 text-sm">Export CSV</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead id="thead" class="text-left text-slate-500 border-b"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = "http://127.0.0.1:8000";   // change if you use another port
+const COLORS = ["#4F46E5","#06B6D4","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899"];
+const charts = {};
+let gran = "month", custRows = [], sortKey = "lifetime_value", sortDir = -1;
+
+const $ = id => document.getElementById(id);
+const inr = v => v >= 1e7 ? `₹${(v/1e7).toFixed(2)} Cr` : v >= 1e5 ? `₹${(v/1e5).toFixed(2)} L` : `₹${Math.round(v).toLocaleString("en-IN")}`;
+const num = v => Math.round(v).toLocaleString("en-IN");
+
+async function api(path, params = {}) {
+  const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null));
+  const r = await fetch(`${API}${path}?${q}`);
+  if (!r.ok) throw new Error(`${path} returned ${r.status}`);
+  return r.json();
+}
+
+function draw(id, config) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart($(id), config);
+}
+const baseOpts = { responsive: true, maintainAspectRatio: false };
+
+function filters() {
+  return { start: $("start").value, end: $("end").value, regions: $("region").value };
+}
+
+function kpiCard(label, value, delta, invert = false, suffix = "%") {
+  let badge = "";
+  if (delta !== null) {
+    const good = invert ? delta <= 0 : delta >= 0;
+    badge = `<div class="text-xs mt-1 ${good ? "text-emerald-600" : "text-red-600"}">${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta).toFixed(1)}${suffix} vs previous</div>`;
+  }
+  return `<div class="bg-white rounded-lg shadow-sm p-4"><div class="text-xs text-slate-500">${label}</div>
+          <div class="text-2xl font-bold mt-1">${value}</div>${badge}</div>`;
+}
+const pct = (c, p) => p ? (c - p) / p * 100 : null;
+
+async function loadKpis() {
+  const s = await api("/api/summary", filters());
+  const c = s.current, p = s.previous, has = p.total_orders > 0;
+  $("kpis").innerHTML =
+    kpiCard("Revenue", inr(c.total_revenue), has ? pct(c.total_revenue, p.total_revenue) : null) +
+    kpiCard("Orders", num(c.total_orders), has ? pct(c.total_orders, p.total_orders) : null) +
+    kpiCard("Active customers", num(c.active_customers), has ? pct(c.active_customers, p.active_customers) : null) +
+    kpiCard("Avg order value", `₹${num(c.avg_order_value)}`, has ? pct(c.avg_order_value, p.avg_order_value) : null) +
+    kpiCard("Cancellation rate", `${c.cancellation_rate_pct.toFixed(2)}%`,
+            has ? c.cancellation_rate_pct - p.cancellation_rate_pct : null, true, " pts");
+}
+
+async function loadCharts() {
+  const f = filters();
+  const [trend, prods, regs, cats, stat] = await Promise.all([
+    api("/api/charts/revenue-trend", { ...f, granularity: gran }),
+    api("/api/charts/top-products", { ...f, n: 10, by: $("prodBy").value }),
+    api("/api/charts/regions", f),
+    api("/api/charts/categories", f),
+    api("/api/charts/status", f),
+  ]);
+
+  draw("cTrend", { type: "line", data: {
+      labels: trend.map(r => r.period),
+      datasets: [{ label: "Revenue", data: trend.map(r => r.revenue), borderColor: COLORS[0],
+                   backgroundColor: "rgba(79,70,229,.1)", fill: true, tension: .25, pointRadius: gran === "month" ? 3 : 0 }] },
+    options: { ...baseOpts, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => inr(c.parsed.y) } } },
+               scales: { y: { ticks: { callback: v => inr(v) } } } } });
+
+  const by = $("prodBy").value;
+  draw("cProducts", { type: "bar", data: {
+      labels: prods.map(r => r.product_name),
+      datasets: [{ data: prods.map(r => r[by]), backgroundColor: COLORS[1] }] },
+    options: { ...baseOpts, indexAxis: "y", plugins: { legend: { display: false } } } });
+
+  draw("cRegions", { type: "bar", data: {
+      labels: regs.map(r => r.region_name),
+      datasets: [{ data: regs.map(r => r.revenue), backgroundColor: COLORS[2] }] },
+    options: { ...baseOpts, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => inr(c.parsed.y) } } },
+               scales: { y: { ticks: { callback: v => inr(v) } } } } });
+
+  draw("cCategories", { type: "doughnut", data: {
+      labels: cats.map(r => r.category),
+      datasets: [{ data: cats.map(r => r.revenue), backgroundColor: COLORS }] },
+    options: { ...baseOpts, plugins: { legend: { position: "right" }, tooltip: { callbacks: { label: c => `${c.label}: ${inr(c.parsed)}` } } } } });
+
+  draw("cStatus", { type: "doughnut", data: {
+      labels: stat.map(r => r.status),
+      datasets: [{ data: stat.map(r => r.orders), backgroundColor: [COLORS[2], COLORS[4], COLORS[3], COLORS[0]] }] },
+    options: { ...baseOpts, plugins: { legend: { position: "right" } } } });
+}
+
+// ---------- Customers table ----------
+const COLS = [["customer_name","Customer"],["city","City"],["state","State"],["orders","Orders"],
+              ["lifetime_value","Lifetime value"],["last_order_date","Last order"]];
+
+function renderTable() {
+  const term = $("search").value.toLowerCase();
+  const rows = custRows
+    .filter(r => r.customer_name.toLowerCase().includes(term) || (r.city || "").toLowerCase().includes(term))
+    .sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : a[sortKey] < b[sortKey] ? -1 : 0) * sortDir);
+  $("thead").innerHTML = "<tr>" + COLS.map(([k, l]) =>
+    `<th class="py-2 pr-4 cursor-pointer select-none" data-k="${k}">${l}${k === sortKey ? (sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("") + "</tr>";
+  $("tbody").innerHTML = rows.map(r => `<tr class="border-b last:border-0">
+      <td class="py-2 pr-4">${r.customer_name}</td><td class="pr-4">${r.city || ""}</td><td class="pr-4">${r.state || ""}</td>
+      <td class="pr-4">${r.orders}</td><td class="pr-4">${inr(r.lifetime_value)}</td><td>${r.last_order_date || ""}</td></tr>`).join("");
+  document.querySelectorAll("#thead th").forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    sortDir = k === sortKey ? -sortDir : -1;
+    sortKey = k; renderTable();
+  });
+}
+
+$("export").onclick = () => {
+  const term = $("search").value.toLowerCase();
+  const rows = custRows.filter(r => r.customer_name.toLowerCase().includes(term) || (r.city || "").toLowerCase().includes(term));
+  const csv = [COLS.map(c => c[0]).join(",")]
+    .concat(rows.map(r => COLS.map(([k]) => `"${String(r[k] ?? "").replace(/"/g, '""')}"`).join(","))).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "top_customers.csv"; a.click();
+};
+$("search").oninput = renderTable;
+
+// ---------- Wiring ----------
+async function refresh() {
+  $("error").classList.add("hidden");
+  try { await Promise.all([loadKpis(), loadCharts()]); }
+  catch (e) { showError(e); }
+}
+function showError(e) {
+  $("error").textContent = `Could not load data: ${e.message}. Is the API running at ${API}?`;
+  $("error").classList.remove("hidden");
+  $("status").textContent = "API offline"; $("status").className = "text-xs px-2 py-1 rounded bg-red-100 text-red-700";
+}
+
+document.querySelectorAll(".gran").forEach(b => b.onclick = () => {
+  gran = b.dataset.g;
+  document.querySelectorAll(".gran").forEach(x => x.className = "gran px-2 py-1 rounded " + (x === b ? "bg-indigo-600 text-white" : "bg-slate-200"));
+  loadCharts().catch(showError);
+});
+$("prodBy").onchange = () => loadCharts().catch(showError);
+$("apply").onclick = refresh;
+
+(async function init() {
+  try {
+    const h = await api("/health");
+    $("status").textContent = `API connected · ${num(h.orders_in_db)} orders`;
+    $("status").className = "text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-700";
+
+    const daily = (await api("/api/revenue", { granularity: "day" })).data;
+    $("start").value = daily[0].order_date; $("end").value = daily[daily.length - 1].order_date;
+
+    (await api("/api/regions")).forEach(r => $("region").insertAdjacentHTML("beforeend",
+      `<option value="${r.region_name}">${r.region_name}</option>`));
+
+    custRows = (await api("/api/customers/top", { n: 100 })).map(r => ({ ...r, last_order_date: (r.last_order_date || "").slice(0, 10) }));
+    renderTable();
+    await refresh();
+  } catch (e) { showError(e); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+commerceiq.duckdb
+*.duckdb
+*.duckdb.wal
+data/*.csv
+data/dirty/
+reports/*
+!reports/.gitkeep

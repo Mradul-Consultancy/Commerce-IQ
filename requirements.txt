@@ -1,0 +1,16 @@
+pandas
+numpy
+faker
+duckdb
+duckdb-engine
+psycopg2-binary
+SQLAlchemy
+python-dotenv
+fastapi
+uvicorn
+httpx2
+requests
+streamlit
+plotly
+openpyxl
+pytest
