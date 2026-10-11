@@ -42,6 +42,9 @@ else:
         "Start it in another terminal from the `commerceiq/` folder:\n\n"
         "`uvicorn api.main:app --reload`"
     )
+    if st.button("🔄 Retry Connection"):
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
 page = st.sidebar.radio("Page", ["Overview", "Data Quality & Anomalies"])
