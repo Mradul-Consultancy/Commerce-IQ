@@ -21,6 +21,8 @@ RUN python src/generate_data.py --scale small \
     && python src/create_views.py \
     && rm -f data/*.csv reports/*.csv
 
-EXPOSE 8000
+RUN chmod +x start.sh
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000 8501
+
+CMD ["./start.sh"]
