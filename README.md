@@ -395,10 +395,13 @@ curl "http://127.0.0.1:8000/api/summary?start=2026-01-01&end=2026-03-31&regions=
 - Daily revenue chart with flagged days highlighted
 - Table of the largest unusual orders, with sliders to adjust sensitivity
 
-<!-- Add screenshots here after your first run, for example:
-![Overview](docs/screenshots/overview.png)
-![Data quality](docs/screenshots/data_quality.png)
--->
+### Dashboard Screenshots
+
+#### 1. Overview & Performance Trends
+![Dashboard Overview](docs/screenshots/dashboard_overview.png)
+
+#### 2. Data Quality & Live Validation
+![Data Quality & Anomalies](docs/screenshots/dashboard_data_quality.png)
 
 ## Anomaly detection
 
