@@ -1,6 +1,6 @@
 import pytest
 
-pytest.importorskip("httpx2")
+pytest.importorskip("httpx")
 
 import config
 from api.main import app

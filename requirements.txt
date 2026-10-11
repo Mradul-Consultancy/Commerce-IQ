@@ -8,7 +8,7 @@ SQLAlchemy
 python-dotenv
 fastapi
 uvicorn
-httpx2
+httpx
 requests
 streamlit
 plotly

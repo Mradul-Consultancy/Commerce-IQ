@@ -16,7 +16,10 @@ _engine = None
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
+        kwargs = {"pool_pre_ping": True}
+        if config.DB_ENGINE == "duckdb":
+            kwargs["connect_args"] = {"read_only": True}
+        _engine = create_engine(config.DATABASE_URL, **kwargs)
     return _engine
 
 
@@ -196,8 +199,12 @@ def _region_filter(regions):
 def revenue_trend(start, end, regions=None, granularity: str = "month") -> pd.DataFrame:
     unit = "day" if granularity == "day" else "month"
     clause, extra = _region_filter(regions)
+    if config.DB_ENGINE == "duckdb":
+        period_expr = f"strftime(DATE_TRUNC('{unit}', o.order_date), '%Y-%m-%d')"
+    else:
+        period_expr = f"TO_CHAR(DATE_TRUNC('{unit}', o.order_date), 'YYYY-MM-DD')"
     sql = f"""
-    SELECT TO_CHAR(DATE_TRUNC('{unit}', o.order_date), 'YYYY-MM-DD') AS period,
+    SELECT {period_expr} AS period,
            SUM(o.total_amount) AS revenue,
            COUNT(*)            AS orders
     {_FROM}
